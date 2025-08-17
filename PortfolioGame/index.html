@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Interactive Portfolio — Alfonso José Guerrero González</title>
+
+<!-- Phaser (CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+
+<style>
+  /* Reset + look general */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(1200px 600px at 50% 0%, #203a43 0%, #0f2027 60%, #0b1419 100%);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Montserrat, Arial, sans-serif;
+    color: #e6f7ff;
+    overflow: hidden; /* evitamos scroll, cámara se encarga */
+  }
+  #game { width: 100vw; height: 100vh; }
+
+  /* Panel de proyecto (HTML overlay) */
+  .panel {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    width: min(360px, 90vw);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(0,255,209,0.35);
+    border-radius: 14px;
+    box-shadow: 0 10px 30px rgba(0,255,209,0.25);
+    backdrop-filter: blur(10px);
+    padding: 16px 18px;
+    display: none;
+  }
+  .panel h3 { margin-bottom: 6px; text-shadow: 0 0 12px #00ffd1; }
+  .panel p  { color: #cfe8ff; line-height: 1.5; text-align: justify; margin-bottom: 12px; }
+  .panel .zone-tag {
+    display: inline-block; font-size: 12px; opacity: .8; margin-bottom: 8px;
+  }
+  .btn {
+    display: inline-block; padding: 10px 14px; border-radius: 10px; font-weight: 700;
+    text-decoration: none; color: #001a16; background: #00ffd1; border: 0;
+    box-shadow: 0 6px 18px rgba(0,255,209,.35);
+  }
+  .btn:hover { filter: brightness(1.05); }
+
+  /* Hint arriba a la izquierda */
+  .hint {
+    position: fixed; left: 16px; top: 16px; font-size: 14px; opacity: .8;
+    background: rgba(0,0,0,0.35); padding: 8px 10px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+</style>
+</head>
+<body>
+  <div id="game"></div>
+
+  <!-- Indicaciones -->
+  <div class="hint">Move: ◀ ▶ &nbsp;&nbsp; Jump: Space/▲</div>
+
+  <!-- Panel de proyecto -->
+  <div id="projectPanel" class="panel">
+    <div class="zone-tag" id="zoneName"></div>
+    <h3 id="projTitle"></h3>
+    <p id="projDesc"></p>
+    <a id="projLink" class="btn" href="#" target="_blank" rel="noopener">Open project</a>
+  </div>
+
+<script>
+(() => {
+  // --- Config general ---
+  const GAME_W = 960;
+  const GAME_H = 540;
+  const LEVEL_W = 3600; // ancho del "mapa"
+  const GROUND_Y = 480; // altura del suelo
+
+  // Zonas temáticas con tus proyectos
+  const ZONES = [
+    {
+      name: "Welcome",
+      start: 0, end: 1000,
+      theme: "default",
+      project: null // solo zona de entrada
+    },
+    {
+      name: "Horror Zone",
+      start: 1000, end: 2000,
+      theme: "horror",
+      project: {
+        title: "Neural",
+        desc: "Neural is a first-person horror game where you take on the role of a psychologist sent to perform a final check-up on a patient with schizophrenia in a state of induced sleep.",
+        url: "https://xxpouxx.itch.io/neural"
+      }
+    },
+    {
+      name: "Arcade / Reflex Zone",
+      start: 2000, end: 2800,
+      theme: "arcade",
+      project: {
+        title: "Glass Runner",
+        desc: "A fast-paced 2D arcade reflex game. Destroy the glass panels before they disappear. Intense, endless and highly challenging.",
+        url: "https://play.google.com/store/apps/details?id=com.loopaholic.GlassRunner"
+      }
+    },
+    {
+      name: "Platformer Zone",
+      start: 2800, end: 3600,
+      theme: "platformer",
+      project: {
+        title: "Blast Jump",
+        desc: "Vertical platformer where you control a cannon propelled by action-reaction. Climb as high as possible to reach the top.",
+        url: "https://xxpouxx.itch.io/blast-jump"
+      }
+    }
+  ];
+
+  // --- Escena principal ---
+  class PlayScene extends Phaser.Scene {
+    constructor() { super("Play"); }
+
+    preload() {
+      // Generamos texturas simples por código (sin imágenes externas)
+      const g = this.add.graphics();
+
+      // Jugador (normal)
+      g.fillStyle(0x00ffd1, 1);
+      g.fillRoundedRect(0, 0, 28, 44, 6);
+      g.lineStyle(2, 0x003a31, 1);
+      g.strokeRoundedRect(0, 0, 28, 44, 6);
+      g.generateTexture("player", 28, 44);
+      g.clear();
+
+      // Jugador con "linterna" (color distinto y un punto claro)
+      g.fillStyle(0x99ffe9, 1);
+      g.fillRoundedRect(0, 0, 28, 44, 6);
+      g.fillStyle(0xffffcc, 1);
+      g.fillCircle(22, 12, 4); // puntito "linterna"
+      g.generateTexture("player_torch", 28, 44);
+      g.clear();
+
+      // Plataforma
+      g.fillStyle(0x186c63, 1);
+      g.fillRect(0, 0, 160, 20);
+      g.generateTexture("platform", 160, 20);
+      g.clear();
+
+      // Fondo de "cartel" para títulos de zona
+      g.fillStyle(0x0b2a2f, 0.8);
+      g.fillRoundedRect(0, 0, 220, 40, 8);
+      g.lineStyle(1, 0x00ffd1, 0.4);
+      g.strokeRoundedRect(0, 0, 220, 40, 8);
+      g.generateTexture("sign", 220, 40);
+      g.destroy();
+    }
+
+    create() {
+      // Mundo y cámara
+      this.physics.world.setBounds(0, 0, LEVEL_W, GAME_H);
+      this.cameras.main.setBounds(0, 0, LEVEL_W, GAME_H);
+      this.cameras.main.setBackgroundColor("#0e1726");
+
+      // Suelo (segmentos)
+      const ground = this.physics.add.staticGroup();
+      for (let x = 0; x < LEVEL_W; x += 160) {
+        const seg = ground.create(x + 80, GROUND_Y, "platform");
+        seg.refreshBody();
+      }
+
+      // Alguna plataforma elevada en cada zona
+      const plats = this.physics.add.staticGroup();
+      plats.create(1300, 380, "platform").refreshBody();  // Horror
+      plats.create(2300, 420, "platform").refreshBody();  // Arcade
+      plats.create(3200, 360, "platform").refreshBody();  // Platformer
+
+      // Jugador
+      this.player = this.physics.add.sprite(120, 200, "player");
+      this.player.setCollideWorldBounds(true);
+      this.player.setDragX(800);
+      this.player.setBounce(0.05);
+
+      // Física
+      this.physics.add.collider(this.player, ground);
+      this.physics.add.collider(this.player, plats);
+
+      // Cámara sigue al jugador
+      this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
+
+      // Controles
+      this.cursors = this.input.keyboard.createCursorKeys();
+      this.space = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+      // Carteles de zona
+      ZONES.forEach(z => {
+        const xmid = (z.start + z.end) / 2;
+        const sign = this.add.image(xmid, 80, "sign").setDepth(10);
+        const t = this.add.text(xmid, 80, z.name, { fontSize: 16, color: "#ccffee" })
+          .setOrigin(0.5)
+          .setDepth(11);
+      });
+
+      // Oscuridad para Horror (overlay fijo a cámara)
+      this.darkOverlay = this.add.rectangle(0, 0, GAME_W, GAME_H, 0x000000, 0.6)
+        .setOrigin(0)
+        .setScrollFactor(0)
+        .setVisible(false);
+
+      // UI HTML (panel)
+      this.ui = {
+        panel: document.getElementById("projectPanel"),
+        zoneName: document.getElementById("zoneName"),
+        title: document.getElementById("projTitle"),
+        desc: document.getElementById("projDesc"),
+        link: document.getElementById("projLink"),
+        show(project, zoneLabel) {
+          this.zoneName.textContent = zoneLabel;
+          this.title.textContent = project.title;
+          this.desc.textContent = project.desc;
+          this.link.href = project.url;
+          this.panel.style.display = "block";
+        },
+        hide() { this.panel.style.display = "none"; }
+      };
+
+      this.currentTheme = null;
+      this._applyTheme("default");
+    }
+
+    _applyTheme(theme) {
+      if (this.currentTheme === theme) return;
+      this.currentTheme = theme;
+
+      if (theme === "horror") {
+        this.darkOverlay.setVisible(true);
+        this.player.setTexture("player_torch");
+      } else {
+        this.darkOverlay.setVisible(false);
+        this.player.setTexture("player");
+      }
+      // Podrías añadir más cambios por tema (tint, partículas, música, etc.)
+    }
+
+    _getZoneByX(x) {
+      return ZONES.find(z => x >= z.start && x < z.end) || ZONES[0];
+    }
+
+    update() {
+      // Movimiento básico
+      const speed = 240;
+      if (this.cursors.left.isDown) {
+        this.player.setVelocityX(-speed);
+        this.player.setFlipX(true);
+      } else if (this.cursors.right.isDown) {
+        this.player.setVelocityX(speed);
+        this.player.setFlipX(false);
+      } else {
+        // Frenado suave
+        if (Math.abs(this.player.body.velocity.x) < 10) this.player.setVelocityX(0);
+      }
+      // Salto
+      const onFloor = this.player.body.blocked.down || this.player.body.touching.down;
+      if ((this.cursors.up.isDown || this.space.isDown) && onFloor) {
+        this.player.setVelocityY(-430);
+      }
+
+      // Cambios por zona
+      const zone = this._getZoneByX(this.player.x);
+      this._applyTheme(zone.theme);
+
+      // Mostrar/ocultar panel según zona
+      if (zone.project) {
+        this.ui.show(zone.project, zone.name);
+      } else {
+        this.ui.hide();
+      }
+    }
+  }
+
+  // Config del juego
+  const config = {
+    type: Phaser.AUTO,
+    parent: "game",
+    width: GAME_W,
+    height: GAME_H,
+    physics: { default: "arcade", arcade: { gravity: { y: 1000 }, debug: false } },
+    scene: [PlayScene],
+    pixelArt: true
+  };
+
+  new Phaser.Game(config);
+})();
+</script>
+</body>
+</html>
