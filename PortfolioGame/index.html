@@ -20,7 +20,6 @@
   <script>
     const LEVEL_W = 4000;
     const LEVEL_H = 600;
-    const GROUND_Y = 500;
 
     class PlayScene extends Phaser.Scene {
       constructor() {
@@ -29,22 +28,28 @@
 
       preload() {
         this.load.spritesheet('player', 'assets/player.png', {
-  		frameWidth: 32,   // ancho de cada frame
-  		frameHeight: 48   // alto de cada frame
-	});
+          frameWidth: 32,
+          frameHeight: 48
+        });
 
         this.load.image('player_torch', 'assets/player_torch.png');
-        this.load.image('ground', 'assets/ground.png');
+
+        this.load.spritesheet('ground', 'assets/ground.png', {
+          frameWidth: 32,
+          frameHeight: 32
+        });
+
         this.load.image('platform', 'assets/platform.png');
         this.load.image('sign', 'assets/sign.png');
       }
 
       create() {
-        // Suelo
-        const ground = this.physics.add.staticGroup();
-        for (let x = 0; x < LEVEL_W; x += 160) {
-          const seg = ground.create(x + 80, GROUND_Y, 'ground');
-          seg.setScale(1).refreshBody();
+        // Suelo: grupo estático de tiles
+        this.groundGroup = this.physics.add.staticGroup();
+
+        for (let x = 0; x < LEVEL_W; x += 32) {
+          const tile = this.groundGroup.create(x, this.scale.height - 16, 'ground', 0).setOrigin(0, 0.5);
+          tile.refreshBody();
         }
 
         // Plataformas
@@ -57,8 +62,8 @@
         this.player = this.physics.add.sprite(100, 300, 'player');
         this.player.setCollideWorldBounds(true);
 
-        // Collider
-        this.physics.add.collider(this.player, ground);
+        // Colliders
+        this.physics.add.collider(this.player, this.groundGroup);
         this.physics.add.collider(this.player, plats);
 
         // Cámaras
